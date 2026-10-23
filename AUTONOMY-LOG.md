@@ -2,6 +2,23 @@
 
 One entry per change to production, written before the change completes.
 
+## 2026-10-23 11:30 UTC — staff sign-in fix ("Missing name") and service accounts
+
+- **Directive:** Michael, 2026-10-23: the Dollar Loanz login on Documate returned
+  `{"code":"INVALID_REQUEST","message":"Missing name"}`; "go through all and fix all".
+- **Cause:** Cloudflare Access (one-time PIN) sends no `name` claim in its OIDC ID token; upstream Documenso rejects
+  any OIDC login without one.
+- **Code:** `rebrand.py` edits `packages/auth/server/lib/utils/handle-oauth-callback-url.ts`: the name falls back to
+  `preferred_username`, then given + family name, then a name made from the email's local part. Commit f172562,
+  build run 39944108462; the new image replaces `040527d5…` by digest with `deploy/deploy.sh` logic (auto-rollback
+  if `/api/health` is not healthy).
+- **Signing database (`documate-db`):** the two seeded service accounts are renamed from `@sign.dontgetbroke.com` to
+  `@documate.dontgetbroke.com`. The code derives their address from `NEXT_PUBLIC_WEBAPP_URL`; after the domain move it
+  could no longer find the "deleted account" owner (account/organisation deletion would fail) and would not block those
+  addresses at sign-in. Two rows, `email` column only. Rollback: the same `UPDATE` with the hosts swapped.
+- **Unchanged:** the two staff invitations to the Dollar Loanz organisation already exist (pending); each person accepts
+  on the dashboard after their first sign-in.
+
 ## 2026-10-23 — Documenso becomes Documate at documate.dontgetbroke.com
 
 - **Directive:** Michael, 2026-10-23: rebrand the hosted Documenso "Documate", serve it at documate.dontgetbroke.com,
