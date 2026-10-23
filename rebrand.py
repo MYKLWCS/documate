@@ -244,6 +244,17 @@ edit("packages/auth/server/lib/utils/handle-oauth-callback-url.ts",
      "    (typeof email === 'string' ? nameFromEmail(email) : undefined);\n"
      "  const sub = claims.sub;\n")
 
+# One sign-in, part 2: upstream always sends `prompt` (default "login"; the env can only pick another value), and
+# Cloudflare Access then asks for a fresh one-time PIN even though the user just signed in at the front door.
+# NEXT_PRIVATE_OIDC_PROMPT=omit sends no prompt for the site-wide OIDC login, so Access reuses its session.
+edit("packages/auth/server/lib/utils/handle-oauth-authorize-url.ts",
+     "  url.searchParams.set('prompt', prompt);\n",
+     "  // Documate: NEXT_PRIVATE_OIDC_PROMPT=omit sends no prompt, so a provider that already has a session (Cloudflare\n"
+     "  // Access, signed in at the front door) signs the user in without asking for a second code.\n"
+     "  if (!(clientOptions.id === 'oidc' && !options.prompt && process.env.NEXT_PRIVATE_OIDC_PROMPT === 'omit')) {\n"
+     "    url.searchParams.set('prompt', prompt);\n"
+     "  }\n")
+
 # ---------------------------------------------------------------------------------------------------------------
 # 2. colour scheme: Documenso lime -> Documate teal (same tokens as Chatmate)
 # ---------------------------------------------------------------------------------------------------------------

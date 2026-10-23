@@ -1,6 +1,6 @@
 # Documate — progress
 
-Updated 2026-10-23 11:35 UTC.
+Updated 2026-10-23 12:20 UTC.
 
 ## Works right now
 
@@ -19,6 +19,8 @@ Updated 2026-10-23 11:35 UTC.
 
 ## In flight
 
+- No second code when opening Documate: build with `NEXT_PRIVATE_OIDC_PROMPT=omit` support, then deploy with the `.env`
+  change (Access was asking for a fresh one-time PIN on every Documate sign-in because Documate always sent `prompt`).
 - dlv2 PR #53 (signing origin → documate): typecheck and build pass; the security check is queued behind the website's
   Playwright run on the shared self-hosted runner; merges when green.
 

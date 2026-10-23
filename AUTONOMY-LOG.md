@@ -2,6 +2,21 @@
 
 One entry per change to production, written before the change completes.
 
+## 2026-10-23 12:20 UTC — no second one-time PIN when opening Documate
+
+- **Directive:** Michael, 2026-10-23: after signing in and opening Documate it asks for another code, then says the
+  account has no access.
+- **Evidence:** Access sent a fresh login code for every Documate sign-in (10:59, 11:03, 11:56, 11:58 UTC) and opened a new
+  Access session each time, while Chatmate and the staff console reused the existing session without a code. The 11:58
+  attempt was refused right after a second code had been mailed: two codes in two minutes, and the one entered no longer
+  counted. Documate's OIDC request always carries `prompt` (upstream default "login"; ours was `select_account`), which
+  makes Access sign the user in again.
+- **Change:** `rebrand.py` edits `packages/auth/server/lib/utils/handle-oauth-authorize-url.ts`: with
+  `NEXT_PRIVATE_OIDC_PROMPT=omit` the site-wide OIDC login sends no prompt (organisation portals unchanged).
+  `test/oidc-no-name.sh` now also fails if the authorize request carries a prompt (it does on the current image).
+  Server `.env`: `NEXT_PRIVATE_OIDC_PROMPT=select_account` → `omit`, deployed together with the new image by digest,
+  rollback to `36460d9d…` + the old value if `/api/health` is not healthy.
+
 ## 2026-10-23 11:30 UTC — staff sign-in fix ("Missing name") and service accounts
 
 - **Directive:** Michael, 2026-10-23: the Dollar Loanz login on Documate returned

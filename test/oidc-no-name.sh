@@ -4,7 +4,8 @@
 # Starts a throwaway Postgres + the image on the host network, a mock provider on 127.0.0.1:9999, and checks:
 #   1. a new user signs in (302 to the app, session cookie) and gets a name made from the email ("Pat Lee");
 #   2. the second sign-in reuses the same OIDC account (no duplicate);
-#   3. an existing user with the same email is linked, keeps their name, and no second user is created.
+#   3. an existing user with the same email is linked, keeps their name, and no second user is created;
+#   4. with NEXT_PRIVATE_OIDC_PROMPT=omit the authorize request carries no prompt (so Access reuses its session).
 # Needs docker, curl, python3. Ports 3000, 55432 and 9999 must be free. Leaves nothing running.
 set -euo pipefail
 IMG=${1:?usage: oidc-no-name.sh <image>}
@@ -29,7 +30,7 @@ docker run -d --name oidc-t-app --network host \
   -e NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY=test-only-11111111111111111111111 \
   -e NEXT_PRIVATE_OIDC_WELL_KNOWN=http://127.0.0.1:9999/.well-known/openid-configuration \
   -e NEXT_PRIVATE_OIDC_CLIENT_ID=test-client -e NEXT_PRIVATE_OIDC_CLIENT_SECRET=test-only \
-  -e NEXT_PRIVATE_OIDC_SKIP_VERIFY=true -e NEXT_PRIVATE_OIDC_PROMPT=select_account \
+  -e NEXT_PRIVATE_OIDC_SKIP_VERIFY=true -e NEXT_PRIVATE_OIDC_PROMPT=omit \
   -e NEXT_PUBLIC_DISABLE_EMAIL_PASSWORD_SIGNIN=true -e NEXT_PRIVATE_ALLOWED_SIGNUP_DOMAINS=example.com \
   "$IMG" >/dev/null
 for _ in $(seq 1 90); do curl -fsS -m 3 -o /dev/null http://localhost:3000/api/health 2>/dev/null && break; sleep 2; done
@@ -41,6 +42,7 @@ login() {  # $1 = email; prints the callback status line
   r=$(curl -sS -c "$jar" -b "$jar" -X POST -H 'Origin: http://localhost:3000' -H 'Content-Type: application/json' -d '{}' \
       http://localhost:3000/api/auth/oauth/authorize/oidc)
   url=$(printf '%s' "$r" | python3 -c 'import json,sys; print(json.load(sys.stdin)["redirectUrl"])') || fail "authorize: $r"
+  case "$url" in *prompt=*) fail "authorize URL still sends a prompt: ${url##*\?}";; esac
   cb=$(curl -sS -o /dev/null -w '%{redirect_url}' "$url")
   curl -sS -c "$jar" -b "$jar" -o "$W/body" -w '%{http_code} %{redirect_url}' "$cb"
   grep -q session "$jar" || { echo " (no session cookie; body: $(head -c 120 "$W/body"))"; return 0; }
@@ -63,4 +65,4 @@ r=$(sql "select count(*)||' '||max(name) from \"User\" where email='owner@exampl
 [ "$r" = "1 Owner Person" ] || fail "existing user: '$r', expected one user named Owner Person"
 n=$(sql "select count(*) from \"Account\" a join \"User\" u on u.id=a.\"userId\" where u.email='owner@example.com' and a.provider='oidc'")
 [ "$n" = 1 ] || fail "existing user has $n OIDC accounts, expected 1"
-echo "PASS: OIDC sign-in without a name claim (new user named 'Pat Lee', re-login reuses the account, existing user linked)"
+echo "PASS: OIDC sign-in without a name claim (new user named 'Pat Lee', re-login reuses the account, existing user linked, no prompt sent)"

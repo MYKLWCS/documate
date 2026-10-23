@@ -26,7 +26,7 @@ badge. Code under upstream `packages/ee` is covered by Documenso's commercial li
 | Signer pages | "Check out Documenso" promo removed; "Powered by" badge links to this source |
 | Emails | Documenso, Inc. postal address removed from footers; support address → contracts@dollarloanz.com |
 | Privacy | Pages served `noindex, nofollow`; `robots.txt` disallows everything; own `security.txt` |
-| Sign-in | OIDC logins without a `name` claim (Cloudflare Access one-time PIN) get a name from the profile or email instead of failing |
+| Sign-in | OIDC logins without a `name` claim (Cloudflare Access one-time PIN) get a name from the profile or email instead of failing; `NEXT_PRIVATE_OIDC_PROMPT=omit` sends no `prompt`, so Access reuses the session from the front door instead of asking for another code |
 
 Kept on purpose (wire-level names other systems depend on): `X-Documenso-*` webhook/email headers, the
 `recipient.N@documenso.com` template placeholders, the licence-server URL, seeded service-account emails and code
