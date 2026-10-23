@@ -1,0 +1,49 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "deploy/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build
+  cancel-in-progress: false
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Build (pinned upstream + rebrand)
+        env:
+          IMAGE: ghcr.io/myklwcs/documate:${{ github.sha }}
+        run: bash build.sh
+
+      - name: Publish
+        env:
+          IMAGE: ghcr.io/myklwcs/documate
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          tag=$(sed -n 's/^tag=//p' UPSTREAM)
+          docker tag "$IMAGE:${{ github.sha }}" "$IMAGE:$tag"
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:$tag"
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:${{ github.sha }}")
+          echo "$digest"
+          {
+            echo "### Documate image"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Digest | \`$digest\` |"
+            echo "| Upstream | \`$(cat UPSTREAM | tr '\n' ' ')\` |"
+            echo "| Commit | \`${{ github.sha }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
