@@ -16,6 +16,10 @@ One entry per change to production, written before the change completes.
   `test/oidc-no-name.sh` now also fails if the authorize request carries a prompt (it does on the current image).
   Server `.env`: `NEXT_PRIVATE_OIDC_PROMPT=select_account` → `omit`, deployed together with the new image by digest,
   rollback to `36460d9d…` + the old value if `/api/health` is not healthy.
+- **Deployed:** 12:21 UTC, `ghcr.io/myklwcs/documate@sha256:0e8e988928bc0b6dd2e0e180b1d622be14e860ffa99316705b7a282c68afafac`
+  (commit 61b7c7f, CI test PASS). `documate-db` restarted with it because it reads the same `.env` (data on its volume,
+  healthy again in seconds). Live authorize request carries no `prompt`. Backups `compose.yml.bak-20261023T122039Z`,
+  `.env.bak-20261023T122039Z`.
 
 ## 2026-10-23 11:30 UTC — staff sign-in fix ("Missing name") and service accounts
 
