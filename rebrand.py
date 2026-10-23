@@ -50,6 +50,256 @@ def write(rel, text):
     (ROOT / rel).write_text(text, encoding="utf-8")
 
 
+CF_ACCESS_TS = r'''import { createPublicKey, type JsonWebKey, verify as verifySignature } from 'node:crypto';
+
+/**
+ * Documate: sign staff in with the Cloudflare Access identity that already guards the staff pages.
+ *
+ * Access adds a signed JWT (`Cf-Access-Jwt-Assertion`) to every request it lets through. A token is accepted only
+ * when it is RS256, signed by one of the team's published keys, issued by the configured team domain, meant for one
+ * of the configured application audiences, unexpired and carries an email. Without both settings the feature is
+ * off (fail closed).
+ *
+ *   DOCUMATE_CF_ACCESS_TEAM_DOMAIN  https://<team>.cloudflareaccess.com
+ *   DOCUMATE_CF_ACCESS_AUD          the Access application AUD tag(s), comma separated
+ */
+export type CloudflareAccessConfig = {
+  teamDomain: string;
+  audiences: string[];
+};
+
+export type CloudflareAccessIdentity = {
+  email: string;
+};
+
+type AccessKey = JsonWebKey & { kid?: string };
+
+const KEY_CACHE_MS = 60 * 60 * 1000;
+const KEY_REFRESH_MIN_MS = 60 * 1000;
+const CLOCK_SKEW_SECONDS = 60;
+
+let keyCache: { teamDomain: string; keys: AccessKey[]; fetchedAt: number } | null = null;
+
+export const getCloudflareAccessConfig = (): CloudflareAccessConfig | null => {
+  const teamDomain = (process.env.DOCUMATE_CF_ACCESS_TEAM_DOMAIN ?? '').trim().replace(/\/+$/, '');
+  const audiences = (process.env.DOCUMATE_CF_ACCESS_AUD ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value !== '');
+
+  if (!/^https?:\/\/[^/\s]+$/.test(teamDomain) || audiences.length === 0) {
+    return null;
+  }
+
+  return { teamDomain, audiences };
+};
+
+const loadKeys = async (teamDomain: string, nowMs: number, refresh: boolean): Promise<AccessKey[]> => {
+  const cached = keyCache && keyCache.teamDomain === teamDomain ? keyCache : null;
+
+  if (cached && (nowMs - cached.fetchedAt < KEY_CACHE_MS) && (!refresh || nowMs - cached.fetchedAt < KEY_REFRESH_MIN_MS)) {
+    return cached.keys;
+  }
+
+  const response = await fetch(`${teamDomain}/cdn-cgi/access/certs`, { signal: AbortSignal.timeout(5000) });
+
+  if (!response.ok) {
+    throw new Error(`Cloudflare Access keys: HTTP ${response.status}`);
+  }
+
+  const body: unknown = await response.json();
+  const keys =
+    typeof body === 'object' && body !== null && Array.isArray((body as { keys?: unknown }).keys)
+      ? (body as { keys: AccessKey[] }).keys
+      : [];
+
+  keyCache = { teamDomain, keys, fetchedAt: nowMs };
+
+  return keys;
+};
+
+const decodeJson = (part: string): Record<string, unknown> | null => {
+  try {
+    const value: unknown = JSON.parse(Buffer.from(part, 'base64url').toString('utf8'));
+
+    return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const verifyCloudflareAccessToken = async (
+  token: string,
+  config: CloudflareAccessConfig,
+  nowMs: number = Date.now(),
+): Promise<CloudflareAccessIdentity | null> => {
+  const parts = token.split('.');
+
+  if (parts.length !== 3) {
+    return null;
+  }
+
+  const [encodedHeader, encodedClaims, encodedSignature] = parts;
+  const header = decodeJson(encodedHeader);
+  const claims = decodeJson(encodedClaims);
+
+  if (!header || !claims || header.alg !== 'RS256' || typeof header.kid !== 'string') {
+    return null;
+  }
+
+  const kid = header.kid;
+  let key = (await loadKeys(config.teamDomain, nowMs, false)).find((candidate) => candidate.kid === kid);
+
+  if (!key) {
+    key = (await loadKeys(config.teamDomain, nowMs, true)).find((candidate) => candidate.kid === kid);
+  }
+
+  if (!key) {
+    return null;
+  }
+
+  const signatureOk = verifySignature(
+    'RSA-SHA256',
+    Buffer.from(`${encodedHeader}.${encodedClaims}`),
+    createPublicKey({ key, format: 'jwk' }),
+    Buffer.from(encodedSignature, 'base64url'),
+  );
+
+  if (!signatureOk) {
+    return null;
+  }
+
+  const nowSeconds = Math.floor(nowMs / 1000);
+  const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+
+  if (claims.iss !== config.teamDomain) {
+    return null;
+  }
+
+  if (!audiences.some((aud) => typeof aud === 'string' && config.audiences.includes(aud))) {
+    return null;
+  }
+
+  if (typeof claims.exp !== 'number' || claims.exp + CLOCK_SKEW_SECONDS < nowSeconds) {
+    return null;
+  }
+
+  if (typeof claims.nbf === 'number' && claims.nbf - CLOCK_SKEW_SECONDS > nowSeconds) {
+    return null;
+  }
+
+  if (typeof claims.email !== 'string' || !/^[^@\s]+@[^@\s]+$/.test(claims.email.trim())) {
+    return null;
+  }
+
+  return { email: claims.email.trim().toLowerCase() };
+};
+'''
+
+CF_ACCESS_ROUTE_TS = r'''import { formatPath } from '@documenso/lib/constants/app';
+import {
+  isDisposableEmail,
+  isEmailDomainAllowedForSignup,
+  isSignupEnabledForProvider,
+} from '@documenso/lib/constants/auth';
+import { getEmailBlocklistDomains } from '@documenso/lib/server-only/site-settings/get-email-blocklist-domains';
+import { onCreateUserHook } from '@documenso/lib/server-only/user/create-user';
+import { deletedServiceAccountEmail } from '@documenso/lib/server-only/user/service-accounts/deleted-account';
+import { legacyServiceAccountEmail } from '@documenso/lib/server-only/user/service-accounts/legacy-service-account';
+import { isValidReturnTo, normalizeReturnTo } from '@documenso/lib/utils/is-valid-return-to';
+import { prisma } from '@documenso/prisma';
+import { Hono } from 'hono';
+
+import { onAuthorize } from '../lib/utils/authorizer';
+import { getCloudflareAccessConfig, verifyCloudflareAccessToken } from '../lib/utils/cloudflare-access';
+import type { HonoAuthContext } from '../types/context';
+
+const nameFromEmail = (email: string) =>
+  email
+    .split('@')[0]
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+
+/**
+ * Documate: one sign-in. Cloudflare Access protects this path and the staff pages and passes its signed identity;
+ * a valid identity signs the matching user in (or creates them when sign-up is allowed for their domain).
+ * Reasons for a refusal are logged without the address.
+ */
+export const cloudflareAccessRoute = new Hono<HonoAuthContext>().get('/', async (c) => {
+  const refuse = (reason: string) => {
+    console.warn(`[Documate] Cloudflare Access sign-in refused: ${reason}`);
+
+    return c.redirect(`${formatPath('/signin')}?error=CLOUDFLARE_ACCESS`, 302);
+  };
+
+  const config = getCloudflareAccessConfig();
+
+  if (!config) {
+    return refuse('not configured');
+  }
+
+  const token = c.req.header('cf-access-jwt-assertion');
+
+  if (!token) {
+    return refuse('no Access token on the request');
+  }
+
+  let identity: Awaited<ReturnType<typeof verifyCloudflareAccessToken>>;
+
+  try {
+    identity = await verifyCloudflareAccessToken(token, config);
+  } catch (err) {
+    console.error('[Documate] Cloudflare Access key fetch failed', err);
+
+    return refuse('keys unavailable');
+  }
+
+  if (!identity) {
+    return refuse('token not valid');
+  }
+
+  const email = identity.email;
+
+  if (email === legacyServiceAccountEmail() || email === deletedServiceAccountEmail()) {
+    return refuse('service account');
+  }
+
+  let user = await prisma.user.findFirst({
+    where: { email: { equals: email, mode: 'insensitive' } },
+    select: { id: true },
+  });
+
+  if (!user) {
+    if (!isSignupEnabledForProvider('oidc') || !isEmailDomainAllowedForSignup(email)) {
+      return refuse('no account and sign-up is not allowed for this domain');
+    }
+
+    if (isDisposableEmail(email, await getEmailBlocklistDomains())) {
+      return refuse('disposable address');
+    }
+
+    const created = await prisma.user.create({
+      data: { email, name: nameFromEmail(email), emailVerified: new Date() },
+    });
+
+    await onCreateUserHook(created).catch((err) => {
+      console.error(err);
+    });
+
+    user = { id: created.id };
+  }
+
+  await onAuthorize({ userId: user.id }, c);
+
+  const requested = c.req.query('returnTo');
+  const returnTo = isValidReturnTo(requested) ? normalizeReturnTo(requested) : undefined;
+
+  return c.redirect(returnTo || formatPath('/'), 302);
+});
+'''
+
 def edit(rel, old, new, count=1, regex=False):
     """Replace exactly `count` occurrences (literal unless regex=True) or fail."""
     src = read(rel)
@@ -254,6 +504,33 @@ edit("packages/auth/server/lib/utils/handle-oauth-authorize-url.ts",
      "  if (!(clientOptions.id === 'oidc' && !options.prompt && process.env.NEXT_PRIVATE_OIDC_PROMPT === 'omit')) {\n"
      "    url.searchParams.set('prompt', prompt);\n"
      "  }\n")
+
+# One sign-in, part 3: Cloudflare Access already guards the staff pages and passes a signed identity token with every
+# request it lets through. Documate signs the matching user in with that token instead of a second (SaaS OIDC) login,
+# which Access answers with a fresh one-time PIN. Verification lives in one file; off unless both env values are set.
+write("packages/auth/server/lib/utils/cloudflare-access.ts", CF_ACCESS_TS)
+write("packages/auth/server/routes/cloudflare-access.ts", CF_ACCESS_ROUTE_TS)
+edit("packages/auth/server/index.ts",
+     "import { oauthRoute } from './routes/oauth';\n",
+     "import { cloudflareAccessRoute } from './routes/cloudflare-access';\nimport { oauthRoute } from './routes/oauth';\n")
+edit("packages/auth/server/index.ts",
+     "  .route('/oauth', oauthRoute)\n",
+     "  .route('/oauth', oauthRoute)\n  .route('/cloudflare-access', cloudflareAccessRoute)\n")
+edit("apps/remix/app/routes/_unauthenticated+/signin.tsx",
+     "  if (isAuthenticated) {\n    throw redirect(returnTo || '/');\n  }\n",
+     "  if (isAuthenticated) {\n    throw redirect(returnTo || '/');\n  }\n\n"
+     "  // Documate: staff reach this page through Cloudflare Access, which attaches a signed identity token. Sign them in\n"
+     "  // with it (the server route verifies it) instead of a second login. A failed attempt comes back with ?error=.\n"
+     "  if (\n"
+     "    process.env.DOCUMATE_CF_ACCESS_AUD &&\n"
+     "    request.headers.get('cf-access-jwt-assertion') &&\n"
+     "    !new URL(request.url).searchParams.get('error')\n"
+     "  ) {\n"
+     "    throw redirect(`/api/auth/cloudflare-access${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`);\n"
+     "  }\n")
+# With one sign-in, "Sign out" must end the Access session too, or the sign-in page signs the user straight back in.
+for menu in ("apps/remix/app/components/general/app-nav-mobile.tsx", "apps/remix/app/components/general/org-menu-switcher.tsx"):
+    edit(menu, "async () => authClient.signOut()}", "async () => authClient.signOut({ redirectPath: '/cdn-cgi/access/logout' })}")
 
 # ---------------------------------------------------------------------------------------------------------------
 # 2. colour scheme: Documenso lime -> Documate teal (same tokens as Chatmate)

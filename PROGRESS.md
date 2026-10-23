@@ -21,7 +21,8 @@ Updated 2026-10-23 12:25 UTC.
 
 ## In flight
 
-- Nothing in flight.
+- One sign-in through Cloudflare Access: Documate trusts the signed identity Access already attaches to staff pages
+  (build + CI test, then the Access path and `.env`, then deploy). Replaces the OIDC step that asked for a second code.
 
 ## Needs Michael
 

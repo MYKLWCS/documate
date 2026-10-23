@@ -26,7 +26,8 @@ badge. Code under upstream `packages/ee` is covered by Documenso's commercial li
 | Signer pages | "Check out Documenso" promo removed; "Powered by" badge links to this source |
 | Emails | Documenso, Inc. postal address removed from footers; support address → contracts@dollarloanz.com |
 | Privacy | Pages served `noindex, nofollow`; `robots.txt` disallows everything; own `security.txt` |
-| Sign-in | OIDC logins without a `name` claim (Cloudflare Access one-time PIN) get a name from the profile or email instead of failing; `NEXT_PRIVATE_OIDC_PROMPT=omit` sends no `prompt`, so Access reuses the session from the front door instead of asking for another code |
+| One sign-in | Staff are signed in with the identity Cloudflare Access already verified (`Cf-Access-Jwt-Assertion`, checked against the team's keys, issuer, app audience and expiry; `DOCUMATE_CF_ACCESS_TEAM_DOMAIN` + `DOCUMATE_CF_ACCESS_AUD`); "Sign out" ends the Access session |
+| Sign-in fallback | OIDC logins without a `name` claim (Cloudflare Access one-time PIN) get a name from the profile or email instead of failing; `NEXT_PRIVATE_OIDC_PROMPT=omit` sends no `prompt`, so Access reuses the session from the front door instead of asking for another code |
 
 Kept on purpose (wire-level names other systems depend on): `X-Documenso-*` webhook/email headers, the
 `recipient.N@documenso.com` template placeholders, the licence-server URL, seeded service-account emails and code
@@ -42,7 +43,8 @@ IMAGE=ghcr.io/myklwcs/documate:dev bash build.sh
 `build.sh` clones the upstream tag in `UPSTREAM`, refuses if the tag no longer points at the pinned commit, runs
 `rebrand.py` in a pinned Alpine container, builds with upstream's own `docker/Dockerfile`, then fails if the shipped
 client bundle still mentions Documenso. GitHub Actions runs the same script on every push to `main`, then
-`test/oidc-no-name.sh` (staff sign-in through a provider that, like Cloudflare Access, sends no name), and only then
+`test/oidc-no-name.sh` (staff sign-in through a provider that, like Cloudflare Access, sends no name) and
+`test/cloudflare-access.sh` (one sign-in with the Access identity token), and only then
 publishes `ghcr.io/myklwcs/documate:<commit>` and `:<upstream-tag>`.
 
 To move to a newer Documenso release: change `UPSTREAM`, push, and fix whatever `rebrand.py` reports — every edit

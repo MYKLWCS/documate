@@ -2,6 +2,28 @@
 
 One entry per change to production, written before the change completes.
 
+## 2026-10-23 16:45 UTC — one sign-in through Cloudflare Access (no second Documate login)
+
+- **Directive:** Michael, 2026-10-23: "fix it so brave works and it all works and make it all work".
+- **Evidence:** in Brave the App Launcher opened on the existing Access session, but Documate's OIDC step (the Access
+  SaaS app) still demanded a fresh one-time PIN after the prompt fix (16:26 UTC). In Claude's in-app browser the same
+  step then failed at Touch ID and Access showed "does not have access" (16:23 UTC).
+- **Change:** Documate signs staff in with the identity token Access already attaches to the staff pages
+  (`Cf-Access-Jwt-Assertion`): RS256 signature against the team's published keys, issuer, audience = the
+  "Documate — staff admin" app, expiry and an email are all required. Existing users are matched by email; a new user
+  is created only for an allowed sign-up domain; every sign-in writes the usual SIGN_IN audit row. `/signin` hands over
+  to `/api/auth/cloudflare-access`; a refused token falls back to the old sign-in page (no loop). The menu's
+  "Sign out" also ends the Access session (`/cdn-cgi/access/logout`), or the sign-in page would sign the user straight
+  back in.
+- **Tests:** `test/cloudflare-access.sh` (existing and new user signed in once; wrong key, another app's token, expired,
+  domain without sign-up and missing token refused; no redirect loop) runs in CI before publish and fails on the
+  current image; the verifier passed 13 hand-built token cases locally.
+- **Cloudflare:** "Documate — staff admin" gains destination `documate.dontgetbroke.com/api/auth/cloudflare-access`
+  (that path was covered by the customer bypass; now only reachable through Access, which adds the token).
+- **Server `.env`:** `DOCUMATE_CF_ACCESS_TEAM_DOMAIN=https://dontgetbroke.cloudflareaccess.com`,
+  `DOCUMATE_CF_ACCESS_AUD=<staff admin app AUD tag>` (public identifiers, not secrets).
+- **Rollback:** remove the two `.env` lines (or redeploy `0e8e9889…`): sign-in falls back to the OIDC step.
+
 ## 2026-10-23 12:20 UTC — no second one-time PIN when opening Documate
 
 - **Directive:** Michael, 2026-10-23: after signing in and opening Documate it asks for another code, then says the

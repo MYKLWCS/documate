@@ -29,6 +29,9 @@ jobs:
       - name: "Test: staff sign-in without a name claim (Cloudflare Access)"
         run: bash test/oidc-no-name.sh "ghcr.io/myklwcs/documate:${{ github.sha }}"
 
+      - name: "Test: one sign-in through Cloudflare Access"
+        run: bash test/cloudflare-access.sh "ghcr.io/myklwcs/documate:${{ github.sha }}"
+
       - name: Publish
         env:
           IMAGE: ghcr.io/myklwcs/documate
