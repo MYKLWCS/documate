@@ -1,16 +1,17 @@
 # Documate — progress
 
-Updated 2026-10-23 12:25 UTC.
+Updated 2026-10-23 19:58 UTC.
 
 ## Works right now
 
 | What | Proof (run 2026-10-23) |
 |---|---|
-| Live at https://documate.dontgetbroke.com on `dgb-n8n-prod`, image `ghcr.io/myklwcs/documate@sha256:0e8e9889…afac` (Documenso v2.21.1 + rebrand, commit 61b7c7f, deployed 12:21 UTC) | `curl https://documate.dontgetbroke.com/api/health` → `{"status":"ok",…"database":{"status":"ok"},"certificate":{"status":"ok"}}` |
+| Live at https://documate.dontgetbroke.com on `dgb-n8n-prod`, image `ghcr.io/myklwcs/documate@sha256:b555794f…a6d7` (Documenso v2.21.1 + rebrand, commit c12acd5, deployed 19:52 UTC) | `curl https://documate.dontgetbroke.com/api/health` → `{"status":"ok",…"database":{"status":"ok"},"certificate":{"status":"ok"}}` |
 | No Documenso text in the shipped UI | CI `build.sh`: `client bundle Documenso mentions: 0`; live sign page HTML: 0 mentions, title "Sign Document - Documate" |
 | Teal colour scheme, Documate logo, icons, manifest, social image, sign-in background | `curl …/site.webmanifest` → `"name": "Documate"`, `theme_color #0D9488`; `/static/logo.png`, `/apple-touch-icon.png`, `/opengraph-image.jpg` are the Documate artwork |
 | Customer signing end to end (no account) | Synthetic contract from template 1 created via API, signed in a headless browser, sealed: PDF 2 pages incl. signing certificate, `pdfsig` → "Signature is Valid" (Dollar Loans LLC certificate); webhooks to n8n E02 returned 200; test document deleted |
 | Staff sign-in accepts the Cloudflare Access login (which sends no name) | `bash test/oidc-no-name.sh ghcr.io/myklwcs/documate@sha256:0e8e9889…` → `PASS` (also runs in CI before every publish): throwaway copy of this exact image + a mock provider that sends Access's claims (email + sub, no name): new user created as "Pat Lee" from the email, second sign-in reuses the same account, an existing account is linked by email instead of duplicated; the previous image `040527d5…` gives the reported `{"code":"INVALID_REQUEST","message":"Missing name"}` in the same test |
+| One sign-in: the Cloudflare Access login is the Documate login | Live in Brave 19:54 UTC: `https://documate.dontgetbroke.com` → Documents with no code or second login; `/api/auth/cloudflare-access` verified the real Access token (SIGN_IN audit row written). `bash test/cloudflare-access.sh <image>` → PASS in CI (existing + new user in once; wrong key, other app, expired, domain without sign-up, missing token refused; no loop). `/api/auth/cloudflare-access` without Access → 302 to the Access login |
 | Documate's sign-in no longer forces a second Access login | Live authorize request 12:22 UTC: parameters `response_type client_id redirect_uri state code_challenge_method code_challenge scope`, no `prompt` (`.env` `NEXT_PRIVATE_OIDC_PROMPT=omit`); the CI test fails if a prompt is sent |
 | Service accounts match the new address | `documate-db`: `serviceaccount@` and `deleted-account@documate.dontgetbroke.com` (were `@sign.…`, so account deletion could not find its owner) |
 | Staff pages behind Cloudflare Access; one sign-in | `/signin`, `/admin`, `/settings` → 302 to Access; the sign-in page sends staff straight to the Access OIDC login (email/password sign-in off) — authorize URL carries `redirect_uri=https://documate.dontgetbroke.com/api/auth/callback/oidc` |
@@ -21,8 +22,7 @@ Updated 2026-10-23 12:25 UTC.
 
 ## In flight
 
-- One sign-in through Cloudflare Access: Documate trusts the signed identity Access already attaches to staff pages
-  (build + CI test, then the Access path and `.env`, then deploy). Replaces the OIDC step that asked for a second code.
+- Nothing in flight.
 
 ## Needs Michael
 
@@ -33,5 +33,7 @@ Updated 2026-10-23 12:25 UTC.
 ## Known broken
 
 - Email still cannot send from Documate (no SMTP / mailbox yet), same as before.
+- Claude's in-app browser cannot pass Cloudflare's Touch ID step (the only enrolled key lives in Brave). Use Brave, or
+  allow an authenticator app in Cloudflare MFA settings (security setting: Michael's call).
 - Signing certificate is self-signed (Adobe shows "validity unknown"); an AATL certificate is a paid upgrade.
 - Kept on purpose, not user-visible: `X-Documenso-*` webhook/email headers, the `documenso` supplier/provider keys and audit actor in the Dollar Loans DB, the `DOCUMENSO_DISABLE_TELEMETRY` env name, `@documenso/*` package names inside the image.

@@ -23,6 +23,10 @@ One entry per change to production, written before the change completes.
 - **Server `.env`:** `DOCUMATE_CF_ACCESS_TEAM_DOMAIN=https://dontgetbroke.cloudflareaccess.com`,
   `DOCUMATE_CF_ACCESS_AUD=<staff admin app AUD tag>` (public identifiers, not secrets).
 - **Rollback:** remove the two `.env` lines (or redeploy `0e8e9889…`): sign-in falls back to the OIDC step.
+- **Done:** Access path added before the deploy (31 destinations, policies unchanged); deployed 19:52 UTC,
+  `ghcr.io/myklwcs/documate@sha256:b555794fd55d36f47e2ba23f1450183a190c0e6421885256a62e4b911b38a6d7` (commit c12acd5, both CI
+  tests PASS). Live check in Brave 19:54 UTC: `/api/auth/cloudflare-access` verified the real Access token and opened
+  Documents (new SIGN_IN audit row, no code asked). `.env` backup `.env.bak-20261023T195124Z`.
 
 ## 2026-10-23 12:20 UTC — no second one-time PIN when opening Documate
 
