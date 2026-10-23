@@ -122,6 +122,17 @@ edit(f"{APP}/components/forms/signup.tsx",
      '              <Trans>Secure electronic signing for your contracts and agreements.</Trans>\n'
      '            </p>\n          </div>', regex=True)
 
+# Sign-in, sign-up and password pages: Documate logo above the card; background rings stay teal in dark mode
+# (upstream inverts the image, which would turn teal into coral).
+LAYOUT = f"{APP}/routes/_unauthenticated+/_layout.tsx"
+edit(LAYOUT, "import { Outlet } from 'react-router';",
+     "import { Outlet } from 'react-router';\n\nimport { BrandingLogo } from '~/components/general/branding-logo';")
+edit(LAYOUT, '<div className="relative w-full flex items-center justify-center">\n          <Outlet />',
+     '<div className="relative flex w-full flex-col items-center justify-center">\n'
+     '          <BrandingLogo className="mb-8 h-10 w-auto text-foreground" />\n          <Outlet />')
+edit(LAYOUT, 'className="dark:brightness-95 dark:contrast-[70%] dark:invert dark:sepia"', 'className="dark:opacity-60"')
+edit(f"{APP}/components/general/generic-error-layout.tsx", 'dark:contrast-[70%] dark:invert dark:sepia"', 'dark:opacity-60"')
+
 # Email footer: no Documenso, Inc. postal address on our emails (company details come from organisation branding).
 edit("packages/email/template-components/template-footer.tsx",
      r"\{!branding\.brandingEnabled && \(\s*<Text className=\"my-8 text-muted-foreground text-sm\">\s*Documenso, Inc\.\s*<br />\s*"
