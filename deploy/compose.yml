@@ -33,7 +33,7 @@ services:
       retries: 20
 
   documate:
-    image: ghcr.io/myklwcs/documate@sha256:040527d5bd397f5ffd2a9eeb5c34a8a4f10448c4e4ffd76c594d4b03a9c36c0d
+    image: ghcr.io/myklwcs/documate@sha256:36460d9d0c28df10a614f682cefb2dcb609835b6da3e0a3ae923c31a00335d7a
     container_name: documate
     restart: always
     security_opt: ["no-new-privileges:true"]
