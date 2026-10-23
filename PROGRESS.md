@@ -14,14 +14,14 @@ Updated 2026-10-23 12:25 UTC.
 | Documate's sign-in no longer forces a second Access login | Live authorize request 12:22 UTC: parameters `response_type client_id redirect_uri state code_challenge_method code_challenge scope`, no `prompt` (`.env` `NEXT_PRIVATE_OIDC_PROMPT=omit`); the CI test fails if a prompt is sent |
 | Service accounts match the new address | `documate-db`: `serviceaccount@` and `deleted-account@documate.dontgetbroke.com` (were `@sign.…`, so account deletion could not find its owner) |
 | Staff pages behind Cloudflare Access; one sign-in | `/signin`, `/admin`, `/settings` → 302 to Access; the sign-in page sends staff straight to the Access OIDC login (email/password sign-in off) — authorize URL carries `redirect_uri=https://documate.dontgetbroke.com/api/auth/callback/oidc` |
+| dlv2 app frames signing only from documate | PR #53 merged 12:24 UTC as `7efd61c` (all required checks green); main: `CONTRACT_SIGNING_ORIGIN = 'https://documate.dontgetbroke.com'` |
 | Old address keeps working | `https://sign.dontgetbroke.com/<path>?<query>` → 301 to the same path on documate |
 | Hourly encrypted backup of the signing database | `dl-backup` 10:03 UTC: `signing-db-20261023-1003.sql.gz.age` from `documate-db`, uploaded to Garage |
 | Data carried over | 16 tables compared row for row between the old and new database before the switch (all equal) |
 
 ## In flight
 
-- dlv2 PR #53 (signing origin → documate): approved, every required check green except Lighthouse, which waits for the
-  shared self-hosted runner's exclusive lock; a scheduled follow-up merges it when green.
+- Nothing in flight.
 
 ## Needs Michael
 
