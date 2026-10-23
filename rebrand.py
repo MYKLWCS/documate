@@ -225,6 +225,25 @@ for m in ("apps/remix/public/site.webmanifest", "packages/assets/site.webmanifes
     write(m, MANIFEST)
 log("write robots.txt, security.txt, site.webmanifest x2")
 
+# One sign-in through Cloudflare Access: Access (one-time PIN) sends no `name` claim, and upstream refuses an OIDC
+# sign-in without one ("Missing name"). Fall back to other profile claims, then a readable name from the email.
+edit("packages/auth/server/lib/utils/handle-oauth-callback-url.ts",
+     "  const email = claims.email;\n  const name = claims.name;\n  const sub = claims.sub;\n",
+     "  const email = claims.email;\n"
+     "  // Documate: Cloudflare Access (one-time PIN) sends no name claim; use another profile claim, else the email.\n"
+     "  const nameFromEmail = (value: string) =>\n"
+     "    value\n"
+     "      .split('@')[0]\n"
+     "      .split(/[._-]+/)\n"
+     "      .filter(Boolean)\n"
+     "      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))\n"
+     "      .join(' ');\n"
+     "  const name =\n"
+     "    [claims.name, claims.preferred_username, [claims.given_name, claims.family_name].filter((v) => typeof v === 'string').join(' ')]\n"
+     "      .find((v): v is string => typeof v === 'string' && v.trim() !== '') ??\n"
+     "    (typeof email === 'string' ? nameFromEmail(email) : undefined);\n"
+     "  const sub = claims.sub;\n")
+
 # ---------------------------------------------------------------------------------------------------------------
 # 2. colour scheme: Documenso lime -> Documate teal (same tokens as Chatmate)
 # ---------------------------------------------------------------------------------------------------------------
